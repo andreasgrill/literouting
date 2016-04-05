@@ -1,0 +1,20 @@
+{
+    "domainlist_address": "",
+    "prepend_www": true,
+    "iptables_chain": "FORWARD",
+    "out_interface": "eth1",
+    "tunnel_name": "ppp0",
+    "vpn_table": "vpn",
+    "custom_dns_servers": [],
+    "timeout": 5,
+    "cache_path": "/tmp/literouting",
+    "max_cache_duration_in_minutes": 720,
+    "log_path": "/var/log/literouting.log",
+    "verbose": true,
+    "notification_cmd": "",
+    "ip4tables_cmd": "iptables",
+    "ip6tables_cmd": "ip6tables",
+    "prevent_duplicates": true,
+    "iptables_compatability_mode": false,
+    "block_action": "REJECT"
+}
