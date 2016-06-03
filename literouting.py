@@ -65,9 +65,21 @@ def get_domainlist(url, timeout):
 def lookup_ipaddresses(domains):
     """ looks up the provided domain list and returns a list of all
     corresponding IP addresses """
+
+    global config
+
     ip_addresses_lists = [lookup_ips(domain) for domain in domains]
     n = list(set([ip for address_list in ip_addresses_lists for ip in address_list])) 
-    return filter(lambda x: ip_version(x) == 4, n)
+
+    # filter ipv6 and ipv4, respectively, if the appropriate command is not set
+    if not config["ip6tables_cmd"]:
+        n = filter(lambda x: ip_version(x) == 4, n)
+
+    if not config["ip4tables_cmd"]:
+        n = filter(lambda x: ip_version(x) == 6, n)
+
+    return n
+
 
 def get_ipaddresses():
     """ provides the caller with a list of lookedup ipaddresses that
@@ -102,28 +114,28 @@ def insert_blacklist_rules(ip_addresses):
     
     for addr in ip_addresses:
 
-        insertCmd = get_routing_command('insert', addr, block_action)
-        checkCmd = get_routing_command('check', addr, block_action)
-        deleteCmd = get_routing_command('delete', addr, block_action)
+        insert_cmd = get_routing_command('insert', addr, block_action)
+        check_cmd = get_routing_command('check', addr, block_action)
+        delete_cmd = get_routing_command('delete', addr, block_action)
         if config["prevent_duplicates"]:
             if not config["iptables_compatability_mode"]:
                 try:
                     # Check if the rule is already existing
-                    logging.debug(" ".join(checkCmd))
-                    subprocess.check_output(checkCmd)
+                    logging.debug(" ".join(check_cmd))
+                    subprocess.check_output(check_cmd)
                 except:
                     # Add the rule as it does not exist yet
-                    logging.debug(" ".join(insertCmd))
-                    subprocess.check_output(insertCmd)
+                    logging.debug(" ".join(insert_cmd))
+                    subprocess.check_output(insert_cmd)
             else:
                 # remove the rule
-                logging.debug(" ".join(deleteCmd))
-                subprocess.call(deleteCmd)
+                logging.debug(" ".join(delete_cmd))
+                subprocess.call(delete_cmd)
 
         if config["iptables_compatability_mode"]:
             # add the rule (in normal mode this already happened)
-            logging.debug(" ".join(insertCmd))
-            subprocess.check_output(insertCmd)
+            logging.debug(" ".join(insert_cmd))
+            subprocess.check_output(insert_cmd)
 
 
 def get_routing_command(routing_operation, address, block_action):
