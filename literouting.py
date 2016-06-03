@@ -66,7 +66,8 @@ def lookup_ipaddresses(domains):
     """ looks up the provided domain list and returns a list of all
     corresponding IP addresses """
     ip_addresses_lists = [lookup_ips(domain) for domain in domains]
-    return list(set([ip for address_list in ip_addresses_lists for ip in address_list])) 
+    n = list(set([ip for address_list in ip_addresses_lists for ip in address_list])) 
+    return filter(lambda x: ip_version(x) == 4, n)
 
 def get_ipaddresses():
     """ provides the caller with a list of lookedup ipaddresses that
@@ -81,10 +82,12 @@ def get_ipaddresses():
             return [addr.strip() for addr in f.readlines()]
     else:
         domains = get_domainlist(config["domainlist_url"], config["timeout"])
+        logging.debug("Considered DNS entries:")
+        logging.debug(", ".join(domains))
+
         if config["prepend_www"]:
             domains.extend(["www.{}".format(domain) for domain in domains])
         addresses = lookup_ipaddresses(domains)
-
         if config["cache_path"]:
             with open(config["cache_path"], "w") as f:
                 for addr in addresses:
@@ -112,11 +115,10 @@ def insert_blacklist_rules(ip_addresses):
                 # remove the rule
                 subprocess.call(get_routing_command('delete', addr, block_action))
 
-                # add the rule
-                subprocess.check_output(get_routing_command('insert', addr, block_action))
-        else:
-            # just add the rules
-            subprocess.call(get_routing_command('insert', addr, block_action))
+        # add the rule
+        cmd = get_routing_command('insert', addr, block_action)
+        logging.debug(" ".join(cmd))
+        subprocess.check_output(cmd)
 
 def get_routing_command(routing_operation, address, block_action):
     """ Creates the shell command for the specified address and routing_operation. """
@@ -140,13 +142,20 @@ def get_routing_command(routing_operation, address, block_action):
 
 def insert_routing_rules(ipaddresses):
     for address in ipaddresses:
-        subprocess.call(["ip", "-4" if ip_version(address) == 4 else "-6", "rule", "add", "to", address, "table", config["vpn_table"]])
+        cmd = ["ip", "-4" if ip_version(address) == 4 else "-6", "rule", "add", "to", address, "table", config["vpn_table"]]
+        logging.debug(" ".join(cmd))
+        subprocess.call(cmd)
     
     # Parse the endpoint ip-address of the vpn tunnel from ifconfig
     vpnaddress = subprocess.check_output(["ifconfig {dev} | sed -n '/inet /{{s/.*P-t-P://;s/ .*//;p}}'".format(dev=config["tunnel_name"])], shell=True).strip()
+    cmd = (["ip", "route", "add", "default", "via", vpnaddress, "dev", config["tunnel_name"], "table", config["vpn_table"]])
+    logging.debug(" ".join(cmd))
 
-    subprocess.call(["ip", "route", "add", "default", "via", vpnaddress, "dev", config["tunnel_name"], "table", config["vpn_table"]])
-    subprocess.call(["ip", "route", "flush", "cache"])
+    subprocess.call(cmd)
+
+    cmd = ["ip", "route", "flush", "cache"]
+    subprocess.call(cmd)
+    logging.debug(" ".join(cmd))
 
 def excepthook(excType, excValue, tb):
     """ this function is called whenever an exception is not catched """
