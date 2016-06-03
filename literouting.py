@@ -82,8 +82,6 @@ def get_ipaddresses():
             return [addr.strip() for addr in f.readlines()]
     else:
         domains = get_domainlist(config["domainlist_url"], config["timeout"])
-        logging.debug("Considered DNS entries:")
-        logging.debug(", ".join(domains))
 
         if config["prepend_www"]:
             domains.extend(["www.{}".format(domain) for domain in domains])
@@ -103,22 +101,30 @@ def insert_blacklist_rules(ip_addresses):
     block_action = config["block_action"]
     
     for addr in ip_addresses:
+
+        insertCmd = get_routing_command('insert', addr, block_action)
+        checkCmd = get_routing_command('check', addr, block_action)
+        deleteCmd = get_routing_command('delete', addr, block_action)
         if config["prevent_duplicates"]:
             if not config["iptables_compatability_mode"]:
                 try:
                     # Check if the rule is already existing
-                    subprocess.check_output(get_routing_command('check', addr, block_action))
+                    logging.debug(" ".join(checkCmd))
+                    subprocess.check_output(checkCmd)
                 except:
                     # Add the rule as it does not exist yet
-                    subprocess.check_output(get_routing_command('insert', addr, block_action))
+                    logging.debug(" ".join(insertCmd))
+                    subprocess.check_output(insertCmd)
             else:
                 # remove the rule
-                subprocess.call(get_routing_command('delete', addr, block_action))
+                logging.debug(" ".join(deleteCmd))
+                subprocess.call(deleteCmd)
 
-        # add the rule
-        cmd = get_routing_command('insert', addr, block_action)
-        logging.debug(" ".join(cmd))
-        subprocess.check_output(cmd)
+        if config["iptables_compatability_mode"]:
+            # add the rule (in normal mode this already happened)
+            logging.debug(" ".join(insertCmd))
+            subprocess.check_output(insertCmd)
+
 
 def get_routing_command(routing_operation, address, block_action):
     """ Creates the shell command for the specified address and routing_operation. """
