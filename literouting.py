@@ -12,6 +12,15 @@ import urllib2
 import time
 
 
+class VpnClientDisconnected(Exception):
+    pass
+
+def flush_routes():
+    cmd = ["ip", "route", "flush", "cache"]
+    subprocess.call(cmd)
+    logging.debug(" ".join(cmd))
+
+
 def notify_send_pushover(msg):
     """ send a notification via pushover
     """
@@ -204,14 +213,13 @@ def insert_routing_rules(ipaddresses):
 
     else:
         msg = "{} - all specified domains are blocked".format(os.path.basename(__file__))
-        logging.warning(msg)
         if config["pushover"]["enabled"] and not os.path.exists(flag_file):
             with open(flag_file, 'wt'):
                 notify_send_pushover(msg)
+        
+        raise VpnClientDisconnected(msg)
 
-    cmd = ["ip", "route", "flush", "cache"]
-    subprocess.call(cmd)
-    logging.debug(" ".join(cmd))
+    flush_routes()
 
 
 def excepthook(excType, excValue, tb):
@@ -220,14 +228,19 @@ def excepthook(excType, excValue, tb):
     err = "Uncaught exception:\n{}\n{}\n{}".format(str(excType), excValue, "".join(traceback.format_exception(excType, excValue, tb)))
     logging.error(err)
 
-    # try to notify the sysadmin about this
+    # always flush the toilet ;) 
     try:
-        subprocess.call(config["notification_cmd"].format(msg="Error: " + err), shell=true)
-        if config["pushover"]["enabled"]:
-            notify_send_pushover(err)
+        flush_routes() 
+    except:
+        pass
 
-    except Exception as inst:
-        logging.error("could not notify admin, {}".format(inst))
+    # try to notify the sysadmin about this
+    if len(config["notification_cmd"]) > 0:
+        try:
+            subprocess.call(config["notification_cmd"].format(msg="Error: " + err), shell=true)
+
+        except Exception as inst:
+            logging.error("could not notify admin, {}".format(inst))
 
 def main():
     """ Retrieve the domains to route """
