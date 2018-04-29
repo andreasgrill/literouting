@@ -11,6 +11,18 @@ import logging.handlers
 import urllib2
 import time
 
+
+def notify_send_pushover(msg):
+    """ send a notification via pushover
+    """
+    global config
+    payload = {"message": msg, "token": config["pushover"]["apitoken"], "user": config["pushover"]["userkey"]}
+    req = urllib2.Request("https://api.pushover.net/1/messages.json")
+    req.add_header("Content-Type", "application/json")
+    
+    urllib2.urlopen(req, json.dumps(payload))
+    
+
 def load_config(config_files):
     """ loads json configuration files
     the latter configs overwrite the previous configs
@@ -23,6 +35,7 @@ def load_config(config_files):
             config.update(json.load(cfg))
 
     return config
+
 
 def lookup_ips(address):
     """ gets all ip addresses for a dns entry """
@@ -40,6 +53,7 @@ def lookup_ips(address):
         except:
             pass
 
+
 def ip_version(address):
     """ returns the ip version, can be either 4 or 6 """
     m = re.match("[0-9a-fA-F:]{5}", address)
@@ -52,6 +66,7 @@ def ip_version(address):
 
     return None
 
+
 def get_domainlist(url, timeout):
     """ loads the domainlist from the provided url and returns as string """
 
@@ -61,6 +76,7 @@ def get_domainlist(url, timeout):
     except urllib2.URLError:
         logging.warning("Domainlist could not be fetched.")
         return []
+
 
 def lookup_ipaddresses(domains):
     """ looks up the provided domain list and returns a list of all
@@ -78,6 +94,7 @@ def lookup_ipaddresses(domains):
     if not config["ip4tables_cmd"]:
         n = filter(lambda x: ip_version(x) == 6, n)
 
+
     return n
 
 
@@ -86,10 +103,10 @@ def get_ipaddresses():
     are either cached or just retrieved."""
     global config
 
-    if (config["cache_path"]
-        and os.path.exists(config["cache_path"])
-        and time.time() - os.path.getmtime(config["cache_path"]) < (60 * config["max_cache_duration_in_minutes"])
-        ):
+    if (config["cache_path"] and
+        os.path.exists(config["cache_path"]) and 
+        time.time() - os.path.getmtime(config["cache_path"]) < (60 * config["max_cache_duration_in_minutes"])
+       ):
         with open(config["cache_path"], "r") as f:
             return [addr.strip() for addr in f.readlines()]
     else:
@@ -158,7 +175,10 @@ def get_routing_command(routing_operation, address, block_action):
         logging.error("Unknown routing_operation provided for get_routing_command.")
         return ""
 
+
 def insert_routing_rules(ipaddresses):
+    global config, __location__
+
     for address in ipaddresses:
         cmd = ["ip", "-4" if ip_version(address) == 4 else "-6", "rule", "add", "to", address, "table", config["vpn_table"]]
         logging.debug(" ".join(cmd))
@@ -166,14 +186,33 @@ def insert_routing_rules(ipaddresses):
     
     # Parse the endpoint ip-address of the vpn tunnel from ifconfig
     vpnaddress = subprocess.check_output(["ifconfig {dev} | sed -n '/inet /{{s/.*P-t-P://;s/ .*//;p}}'".format(dev=config["tunnel_name"])], shell=True).strip()
-    cmd = (["ip", "route", "add", "default", "via", vpnaddress, "dev", config["tunnel_name"], "table", config["vpn_table"]])
-    logging.debug(" ".join(cmd))
+    flag_file = "/tmp/{}.last_failed".format(os.path.basename(__file__))
 
-    subprocess.call(cmd)
+    if len(vpnaddress) > 0:
+        cmd = (["ip", "route", "add", "default", "via", vpnaddress, "dev", config["tunnel_name"], "table", config["vpn_table"]])
+        logging.debug(" ".join(cmd))
+        subprocess.call(cmd)
+        msg = "{} - routing over vpn resumed".format(os.path.basename(__file__))
+ 
+        if config["pushover"]["enabled"] and os.path.exists(flag_file):
+            notify_send_pushover(msg)
+
+            try:                                                                                                            
+                os.remove(flag_file)                                                                                        
+            except OSError:                                                                                                 
+                pass  
+
+    else:
+        msg = "{} - all specified domains are blocked".format(os.path.basename(__file__))
+        logging.warning(msg)
+        if config["pushover"]["enabled"] and not os.path.exists(flag_file):
+            with open(flag_file, 'wt'):
+                notify_send_pushover(msg)
 
     cmd = ["ip", "route", "flush", "cache"]
     subprocess.call(cmd)
     logging.debug(" ".join(cmd))
+
 
 def excepthook(excType, excValue, tb):
     """ this function is called whenever an exception is not catched """
@@ -184,6 +223,9 @@ def excepthook(excType, excValue, tb):
     # try to notify the sysadmin about this
     try:
         subprocess.call(config["notification_cmd"].format(msg="Error: " + err), shell=true)
+        if config["pushover"]["enabled"]:
+            notify_send_pushover(err)
+
     except Exception as inst:
         logging.error("could not notify admin, {}".format(inst))
 
